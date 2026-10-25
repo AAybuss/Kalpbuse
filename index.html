@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Love Heart ❤️</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#060208;color:#fff;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .wrap{width:min(100vw,900px);padding:14px;text-align:center}
+  #stage{display:block;width:100%;height:auto;max-height:78vh;aspect-ratio:1/1;background:#060208;border-radius:16px}
+  #start{margin:10px auto 0;padding:14px 28px;border:1px solid #ff9caf;border-radius:999px;background:linear-gradient(135deg,#a6002b,#ff315b);color:white;font-size:17px;font-weight:bold;cursor:pointer;box-shadow:0 0 24px #ff174455}
+  #start:hover{filter:brightness(1.12)}
+  #hint{color:#d9aab7;font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="stage" width="800" height="800" aria-label="Birçok dilde sevgi sözcükleriyle çizilen kalp animasyonu"></canvas>
+  <button id="start">❤️ Kalbi çiz</button>
+  <div id="hint">Butona basınca kalp animasyonu başlayacak.</div>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const button = document.getElementById('start');
+  const hint = document.getElementById('hint');
+  const W = 800, H = 800, SC = 21, OY = 20;
+  const DURATION = 10000, TICK = 16, ANIM = 42, LIFT = 34, GAP = 7;
+  const SIZES = [9,10,11,12];
+  const BG = '#060208';
+  const BGC = [6/255,2/255,8/255];
+  const FLASH = [1,.78,.78];
+  const PHRASES = [
+    'I love you','Seni seviyorum','Te amo',"Je t'aime",'Ich liebe dich','Ti amo',
+    'Eu te amo','Я тебя люблю','사랑해','愛してる','我爱你','मैं तुमसे प्यार करता हूँ',
+    "Σ' αγαπώ",'Ik hou van jou','Jag älskar dig','Kocham cię','ฉันรักเธอ',
+    'Anh yêu em','Aku cinta kamu','Я тебе кохаю'
+  ];
+  let items=[], active=[], mainItems=[], startTime=0, lastTime=0, spawnIndex=0, running=false, raf=0;
+  let seed=11;
+  function rand(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
+  function heart(a){ return [16*Math.sin(a)**3*SC, (13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a))*SC+OY]; }
+  const poly=Array.from({length:720},(_,i)=>heart(2*Math.PI*i/720));
+  const YMAX=Math.max(...poly.map(p=>p[1])), YMIN=Math.min(...poly.map(p=>p[1]));
+  const CY=(YMAX+YMIN)/2;
+  const edges=poly.map((p,i)=>[p,poly[(i+1)%poly.length]]);
+  function spans(y){
+    const xs=[];
+    for(const [[x1,y1],[x2,y2]] of edges){
+      if((y1<=y&&y<y2)||(y2<=y&&y<y1)) xs.push(x1+(y-y1)*(x2-x1)/(y2-y1));
+    }
+    xs.sort((a,b)=>a-b);
+    const out=[]; for(let i=0;i+1<xs.length;i+=2) out.push([xs[i],xs[i+1]]);
+    return out;
+  }
+  function intersect(A,B){
+    const out=[]; for(const a of A) for(const b of B){const lo=Math.max(a[0],b[0]),hi=Math.min(a[1],b[1]);if(hi-lo>14)out.push([lo,hi]);}
+    return out;
+  }
+  function hex(c){return '#'+c.map(v=>Math.round(Math.max(0,Math.min(1,v))*255).toString(16).padStart(2,'0')).join('');}
+  function mix(a,b,k){return a.map((v,i)=>v+(b[i]-v)*k);}
+  function dim(c,k){return c.map(v=>v*k);}
+  function dist(x,y){return Math.hypot(x/(16*SC),(y-CY)/(14.5*SC));}
+  function build(){
+    const placed=[]; let phraseIndex=0;
+    const nextPhrase=()=>PHRASES[(phraseIndex++)%PHRASES.length];
+    const rowH=18, half=rowH/2;
+    for(let y=YMAX-half;y>YMIN+half;y-=rowH){
+      for(let [lo0,hi0] of intersect(spans(y+half),spans(y-half))){
+        const lo=lo0+4, hi=hi0-4; let cur=lo+rand()*8; const line=[];
+        while(cur<hi){
+          let fit=null;
+          for(let tries=0;tries<10;tries++){
+            const text=nextPhrase(),size=SIZES[Math.floor(rand()*SIZES.length)];
+            ctx.font=`bold ${size}px Arial`;
+            const width=ctx.measureText(text).width;
+            if(cur+width<=hi){fit={text,size,width};break;}
+          }
+          if(!fit) break;
+          line.push({x:cur+fit.width/2,y,text:fit.text,size:fit.size,width:fit.width});
+          cur+=fit.width+GAP;
+        }
+        if(line.length>1){
+          const left=hi-(line[line.length-1].x+line[line.length-1].width/2);
+          line.forEach((p,i)=>p.x+=left*i/(line.length-1));
+        } else if(line.length===1) line[0].x=(lo+hi)/2;
+        line.forEach((p,i)=>{p.edge=(i===0||i===line.length-1);placed.push(p);});
+      }
+    }
+    const wine=[.58,0,.09],crimson=[.90,.05,.14],blood=[.98,.10,.16];
+    for(const p of placed){
+      const rad=Math.min(1,dist(p.x,p.y));
+      let base=mix(wine,crimson,.25+.75*rad);
+      base=mix(base,blood,Math.min(1,rand()*.35+(p.edge?.3:0)));
+      p.color=base;p.rad=rad;
+    }
+    const edge=placed.filter(p=>p.edge),inner=placed.filter(p=>!p.edge);
+    edge.sort((a,b)=>Math.atan2(a.x,a.y-CY)-Math.atan2(b.x,b.y-CY));
+    inner.sort((a,b)=>b.rad-a.rad);
+    return edge.concat(inner);
+  }
+  function reset(){
+    if(raf) cancelAnimationFrame(raf);
+    ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
+    seed=11;items=build();active=[];mainItems=[];spawnIndex=0;startTime=performance.now();lastTime=startTime;running=true;
+    button.textContent='❤️ Yeniden çiz';hint.textContent='Kalbin oluşmasını izle…';
+    raf=requestAnimationFrame(frame);
+  }
+  function frame(now){
+    const dt=Math.min(50,now-lastTime);lastTime=now;
+    const target=Math.floor(Math.min(1,(now-startTime)/DURATION)*items.length);
+    while(spawnIndex<target){
+      const p=items[spawnIndex++];
+      active.push({...p,f:0,dx:(rand()*20-10),age:0});
+      mainItems.push(p);
+    }
+    ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
+    for(const p of active){
+      p.f+=dt/(TICK); const u=Math.min(1,p.f/ANIM),e=1-Math.pow(1-u,3);
+      const x=p.x+p.dx*(1-e), y=-p.y-LIFT*(1-e);
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`bold ${p.size}px Arial`;
+      ctx.fillStyle=hex(mix(BGC,dim(p.color,.30),e));ctx.fillText(p.text,x+2,y+3);
+      ctx.font=`bold ${p.size+1}px Arial`;ctx.fillStyle=hex(mix(BGC,dim(p.color,.20),e*e));ctx.fillText(p.text,x,y);
+      const flash=.75*Math.sin(Math.PI*Math.max(0,Math.min(1,(u-.55)/.45)));
+      ctx.font=`bold ${p.size}px Arial`;ctx.fillStyle=hex(mix(mix(BGC,p.color,Math.pow(e,1.5)),FLASH,flash));ctx.fillText(p.text,x,y);
+    }
+    if(spawnIndex>=items.length && active.every(p=>p.f>=ANIM)){
+      active=[]; hint.textContent='❤️ Senin için çizildi.'; drawShimmer(now); return;
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  function drawShimmer(now){
+    ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
+    for(const p of items){
+      ctx.font=`bold ${p.size}px Arial`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=hex(p.color);ctx.fillText(p.text,p.x,-p.y);
+    }
+    const t=now/1000;
+    for(let i=0;i<10;i++){
+      const p=items[Math.floor((Math.sin(t*1.8+i*8)+1)*.5*(items.length-1))];
+      ctx.font=`bold ${p.size}px Arial`;ctx.fillStyle='#ffc7d1';ctx.fillText(p.text,p.x,-p.y);
+    }
+    raf=requestAnimationFrame(drawShimmer);
+  }
+  // İlk açılışta yalnızca boş ekran ve buton görünür.
+  ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
+  button.addEventListener('click',reset);
+})();
+</script>
+</body>
+</html>
